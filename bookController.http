@@ -1,0 +1,7 @@
+### GET request to example server
+GET {{host}}/api/books
+###
+
+### GET request to example server
+GET {{host}}/api/books/title two
+###
