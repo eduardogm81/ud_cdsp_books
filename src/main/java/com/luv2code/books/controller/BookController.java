@@ -1,11 +1,22 @@
 package com.luv2code.books.controller;
 
 import com.luv2code.books.entity.Book;
+import com.luv2code.books.exception.BookErrorResponse;
+import com.luv2code.books.exception.BookNotFoundException;
+import com.luv2code.books.request.BookRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@Tag(name = "Book Rest API Endpoints", description = "Operations related to Books")
 @RestController
 @RequestMapping("/api/books")
 public class BookController {
@@ -19,51 +30,104 @@ public class BookController {
 
     private void initializeBooks() {
         books.addAll(List.of(
-                new Book("Title one", "Author one", "science"),
-                new Book("Title two", "Author two", "science"),
-                new Book("Title three", "Author three", "history"),
-                new Book("Title four", "Author four", "math"),
-                new Book("Title five", "Author five", "math"),
-                new Book("Title six", "Author six", "math")
+                new Book(1, "Computer Science Pro", "Chad Darby", "Computer Science", 5),
+                new Book(2, "Java Srping Master", "Eric Roby", "Computer Science", 5),
+                new Book(3, "Why 1+1 Rocks", "Adil A.", "Math", 5),
+                new Book(4, "How Bears Hibernate", "Bob B.", "Science", 2),
+                new Book(5, "A Pirate's Treasure", "Curt C.", "History", 3),
+                new Book(6, "Why 2+2 is better", "Dan D.", "Math", 1)
         ));
     }
 
+    @Operation(summary = "Get all books", description = "Retrieve a list of all aviable books")
+    @ResponseStatus(HttpStatus.OK)
     @GetMapping
-    public List<Book> getBooks(@RequestParam(required = false) String category) {
+    public List<Book> getBooks(
+            @Parameter(description = "Optional query parameter") @RequestParam(required = false) String category
+    ) {
         if (category == null) return books;
         return books.stream()
                 .filter(book -> book.getCategory().equalsIgnoreCase(category))
                 .toList();
     }
 
-    @GetMapping("/{title}")
-    public Book getBookByTitle(@PathVariable String title) {
+    @Operation(summary = "Get book by ID", description = "Retrieve a specific book by its ID")
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/{id}")
+    public Book getBookByTitle(
+            @Parameter(description = "Id of the book to be retrieved") @PathVariable @Min(1) long id
+    ) {
         return books.stream()
-                .filter(book -> book.getTitle().equalsIgnoreCase(title))
+                .filter(book -> book.getId() == id)
                 .findFirst()
-                .orElse(null);
+                .orElseThrow(() -> new BookNotFoundException("Book not found with id: " + id));
     }
 
+    @Operation(summary = "Create a new book", description = "Add a new book to the collection")
+    @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
-    public void createBood(@RequestBody Book newBook) {
-        boolean isNewBook = books.stream()
-                .noneMatch(book -> book.getTitle().equalsIgnoreCase(newBook.getTitle()));
-        if (isNewBook) books.add(newBook);
+    public void createBook(@Valid @RequestBody BookRequest bookRequest) {
+        long id = getNextId();
+        books.add(converToBook(id, bookRequest));
     }
 
-    @PutMapping("/{title}")
-    public void updateBook(@PathVariable String title, @RequestBody Book updatedBook) {
+    @Operation(summary = "Update an existing book", description = "Update the details of an existing book")
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/{id}")
+    public Book updateBook(
+            @Parameter(description = "Id of the book to update") @PathVariable @Min(1) long id,
+            @Valid @RequestBody BookRequest bookRequest
+    ) {
         for (int i = 0; i < books.size(); i++) {
-            if (books.get(i).getTitle().equalsIgnoreCase(title)) {
+            if (books.get(i).getId() == id) {
+                Book updatedBook = converToBook(id, bookRequest);
                 books.set(i, updatedBook);
-                return;
+                return updatedBook;
             }
         }
+
+        throw new BookNotFoundException("Book not found with id: " + id);
     }
 
-    @DeleteMapping("/{title}")
-    public void deleteBook(@PathVariable String title) {
-        books.removeIf(book -> book.getTitle().equalsIgnoreCase(title));
+    @Operation(summary = "Delete a book", description = "Remove a book from the collection by its ID")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")
+    public void deleteBook(
+            @Parameter(description = "Id of the book to delete") @PathVariable @Min(1) long id
+    ) {
+        books.stream()
+                .filter(book -> book.getId() == id)
+                .findFirst()
+                .orElseThrow(() -> new BookNotFoundException("Book not found with id: " + id));
+
+        books.removeIf(book -> book.getId() == id);
+    }
+
+    private long getNextId() {
+        return books.stream().mapToLong(Book::getId).max().orElse(0L) + 1;
+    }
+
+    private Book converToBook(long id, BookRequest bookRequest) {
+        return new Book(id, bookRequest.getTitle(), bookRequest.getAuthor(),
+                bookRequest.getCategory(), bookRequest.getRating());
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<BookErrorResponse> handleException(BookNotFoundException exception) {
+        BookErrorResponse error = new BookErrorResponse(
+            HttpStatus.NOT_FOUND.value(),
+            exception.getMessage(),
+            System.currentTimeMillis());
+        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler
+    public ResponseEntity<BookErrorResponse> handleException(Exception exception) {
+        BookErrorResponse error = new BookErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "Invalid request",
+                System.currentTimeMillis());
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
 }
